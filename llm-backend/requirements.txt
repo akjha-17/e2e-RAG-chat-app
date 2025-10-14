@@ -26,3 +26,7 @@ PyMuPDF
 langchain-core
 langchain
 filelock
+
+# Database support for deployment
+psycopg2-binary
+python-dotenv

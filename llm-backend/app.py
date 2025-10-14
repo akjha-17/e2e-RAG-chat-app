@@ -12,11 +12,15 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from auth import (verify_token, verify_user, verify_admin, create_access_token, 
                  get_user_from_token)
 from tasks import run_reindex_background
-from feedback_db import save_feedback, get_feedbacks
-from user_db import (create_user, authenticate_user, get_user_by_username, 
-                    update_user_profile, create_chat_session, get_user_chat_sessions,
-                    save_chat_message, get_chat_messages, update_message_feedback,
-                    delete_chat_session, update_session_title)
+# Unified database functions (replaces user_db and feedback_db)
+from db_functions import (
+    create_user, authenticate_user, get_user_by_username, 
+    update_user_profile, create_chat_session, get_user_chat_sessions,
+    save_chat_message, get_chat_messages, update_message_feedback,
+    delete_chat_session, update_session_title,
+    save_feedback, get_feedbacks, get_user_statistics, get_database_status,
+    get_message_details
+)
 from typing import List
 from models import (AskRequest, AskResponse, UploadResponse, ReindexResponse, 
                    FeedbackRequest, SourceItem, DevTokenRequest, UserRegistrationRequest,
@@ -72,6 +76,11 @@ def get_is_admin(claims: dict = Depends(get_current_user)) -> bool:
 @app.get("/health")
 def health():
     return {"status": "ok", "llm_backend": LLM_BACKEND, "embedding" : EMBED_BACKEND }
+
+@app.get("/database-status")
+def database_status():
+    """Get database connection status and info"""
+    return get_database_status()
 
 # User Authentication Endpoints
 @app.post("/auth/register", response_model=UserLoginResponse)
@@ -473,7 +482,7 @@ def submit_message_feedback(
     
     # Also save to feedback table for analytics (get message details first)
     try:
-        from user_db import get_message_details
+        # get_message_details now imported from db_functions
         message_details = get_message_details(feedback_data.message_id, current_user["id"])
         if message_details:
             # Create a session ID that indicates this is chat feedback
@@ -502,7 +511,7 @@ def get_user_statistics(
         raise HTTPException(status_code=403, detail="User privileges required")
     
     try:
-        from user_db import get_user_statistics
+        # get_user_statistics now imported from db_functions
         stats = get_user_statistics(current_user["id"])
         return stats
     except Exception as e:
