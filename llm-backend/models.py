@@ -98,7 +98,7 @@ class ChatMessageResponse(BaseModel):
     message_type: str  # 'user' or 'assistant'
     content: str
     sources: List[SourceItem] = []
-    rating: Optional[int] = None
+    feedback_rating: Optional[int] = None  # Fixed field name to match database
     feedback_comment: str = ""
     timestamp: str
 
@@ -111,5 +111,5 @@ class ChatSessionUpdateRequest(BaseModel):
 
 class MessageFeedbackRequest(BaseModel):
     message_id: int
-    rating: int
+    rating: int  # This will map to feedback_rating in database
     comment: str = ""

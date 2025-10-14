@@ -349,11 +349,10 @@ def ask(req: AskRequest, current_user: dict = Depends(get_current_user_data), is
     return AskResponse(query=req.query, language=q_lang, answer=answer or "", sources=sources, session_id=req.session_id)
 
 @app.post("/feedback")
-def feedback(req: FeedbackRequest, user=Depends(get_current_user), is_user: bool = Depends(get_is_user)):
+def feedback(req: FeedbackRequest, current_user=Depends(get_current_user), is_user: bool = Depends(get_is_user)):
     if is_user:
-        # persist feedback to sqlite via feedback_db.save_feedback
-        uname = user.get("preferred_username", "anonymous")
-        save_feedback(uname, req.session_id, req.query, None, req.rating, req.comment)
+        # persist feedback to database via save_feedback
+        save_feedback(current_user["id"], req.session_id, req.query, None, req.rating, req.comment)
         return JSONResponse({"status":"ok"})
     else:
         raise HTTPException(status_code=403, detail="User privileges required")

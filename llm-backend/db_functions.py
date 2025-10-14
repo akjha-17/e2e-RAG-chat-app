@@ -15,15 +15,16 @@ def hash_password(password: str) -> str:
     return hashlib.sha256((password + salt).encode()).hexdigest()
 
 def create_user(username: str, email: str, password: str, full_name: str, 
-                preferred_name: str, organization: str = "", role: str = "user") -> bool:
+                preferred_name: str, organization: str = "", role: str = "user", 
+                is_admin: bool = False) -> bool:
     """Create a new user"""
     try:
         password_hash = hash_password(password)
         execute_query('''
             INSERT INTO users (username, email, password_hash, full_name, preferred_name, 
-                             organization, role, puid)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (username, email, password_hash, full_name, preferred_name, organization, role, str(uuid.uuid4())))
+                             organization, role, puid, is_admin)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (username, email, password_hash, full_name, preferred_name, organization, role, str(uuid.uuid4()), is_admin))
         return True
     except Exception as e:
         print(f"Error creating user: {e}")
@@ -99,13 +100,36 @@ def create_chat_session(user_id: int, title: str = "New Chat") -> str:
         return ""
 
 def get_user_chat_sessions(user_id: int) -> List[Dict]:
-    """Get all chat sessions for a user"""
+    """Get all chat sessions for a user with message count"""
     try:
-        return execute_query('''
-            SELECT * FROM chat_sessions 
-            WHERE user_id = ? AND is_active = TRUE 
-            ORDER BY updated_at DESC
+        sessions = execute_query('''
+            SELECT cs.id, cs.user_id, cs.title, cs.created_at, cs.updated_at, 
+                   cs.is_active, cs.session_data,
+                   COALESCE(COUNT(cm.id), 0) as message_count,
+                   MAX(cm.created_at) as last_message_time
+            FROM chat_sessions cs
+            LEFT JOIN chat_messages cm ON cs.id = cm.session_id
+            WHERE cs.user_id = ? AND cs.is_active = TRUE 
+            GROUP BY cs.id, cs.user_id, cs.title, cs.created_at, cs.updated_at, cs.is_active, cs.session_data
+            ORDER BY cs.updated_at DESC
         ''', (user_id,), fetch_all=True) or []
+        
+        # Ensure all sessions have the required fields
+        result = []
+        for session in sessions:
+            session_dict = dict(session)
+            
+            # Ensure message_count is set
+            if 'message_count' not in session_dict:
+                session_dict['message_count'] = 0
+                
+            # Ensure last_message_time is properly formatted
+            if session_dict.get('last_message_time') is None:
+                session_dict['last_message_time'] = None
+            
+            result.append(session_dict)
+        
+        return result
     except Exception as e:
         print(f"Error getting chat sessions: {e}")
         return []
@@ -138,24 +162,61 @@ def delete_chat_session(session_id: str, user_id: int) -> bool:
 
 # Chat message functions
 def save_chat_message(session_id: str, user_id: int, message_type: str, 
-                     content: str, sources: List[Dict] = None) -> int:
-    """Save a chat message"""
+                     content: str, sources: List[Dict] = None) -> Optional[Dict]:
+    """Save a chat message and return the created message"""
     try:
         sources_json = json.dumps(sources) if sources else None
-        result = execute_query('''
-            INSERT INTO chat_messages (session_id, user_id, message_type, content, sources)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (session_id, user_id, message_type, content, sources_json))
         
-        # Update session timestamp
-        execute_query('''
-            UPDATE chat_sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?
-        ''', (session_id,))
+        # Insert message and get ID
+        from unified_db import db
+        if db.db_type == "postgresql":
+            # PostgreSQL - return the inserted row
+            message = execute_query('''
+                INSERT INTO chat_messages (session_id, user_id, message_type, content, sources)
+                VALUES (?, ?, ?, ?, ?)
+                RETURNING *
+            ''', (session_id, user_id, message_type, content, sources_json), fetch_one=True)
+        else:
+            # SQLite - insert then fetch
+            execute_query('''
+                INSERT INTO chat_messages (session_id, user_id, message_type, content, sources)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (session_id, user_id, message_type, content, sources_json))
+            
+            # Get the last inserted message
+            message = execute_query('''
+                SELECT * FROM chat_messages 
+                WHERE session_id = ? AND user_id = ? 
+                ORDER BY id DESC LIMIT 1
+            ''', (session_id, user_id), fetch_one=True)
         
-        return result
+        if message:
+            # Update session timestamp
+            execute_query('''
+                UPDATE chat_sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?
+            ''', (session_id,))
+            
+            # Process message to match model expectations
+            message = dict(message)
+            if message.get('sources'):
+                try:
+                    message['sources'] = json.loads(message['sources'])
+                except:
+                    message['sources'] = []
+            else:
+                message['sources'] = []
+            
+            if message.get('feedback_comment') is None:
+                message['feedback_comment'] = ""
+                
+            message['timestamp'] = message.get('created_at', '')
+            
+            return message
+        
+        return None
     except Exception as e:
         print(f"Error saving chat message: {e}")
-        return 0
+        return None
 
 def get_chat_messages(session_id: str, user_id: int) -> List[Dict]:
     """Get all messages for a chat session"""
@@ -166,13 +227,24 @@ def get_chat_messages(session_id: str, user_id: int) -> List[Dict]:
             ORDER BY created_at ASC
         ''', (session_id, user_id), fetch_all=True) or []
         
-        # Parse sources JSON
+        # Process messages to match ChatMessageResponse model
         for message in messages:
+            # Parse sources JSON - ensure it's always a list
             if message.get('sources'):
                 try:
                     message['sources'] = json.loads(message['sources'])
                 except:
                     message['sources'] = []
+            else:
+                message['sources'] = []
+            
+            # Ensure feedback_comment is a string
+            if message.get('feedback_comment') is None:
+                message['feedback_comment'] = ""
+            
+            # Add timestamp field (using created_at)
+            if 'created_at' in message:
+                message['timestamp'] = message['created_at']
                     
         return messages
     except Exception as e:
@@ -208,7 +280,7 @@ def save_feedback(user_id: int, session_id: str, query: str, source_chunk: int =
         print(f"Error saving feedback: {e}")
         return False
 
-def get_feedbacks(user_id: int = None, session_id: str = None) -> List[Dict]:
+def get_feedbacks(user_id: int = None, session_id: str = None, limit: int = 1000) -> List[Dict]:
     """Get feedback data with optional filters"""
     try:
         if user_id and session_id:
@@ -216,18 +288,21 @@ def get_feedbacks(user_id: int = None, session_id: str = None) -> List[Dict]:
                 SELECT * FROM feedback 
                 WHERE user_id = ? AND session_id = ? 
                 ORDER BY created_at DESC
-            ''', (user_id, session_id), fetch_all=True) or []
+                LIMIT ?
+            ''', (user_id, session_id, limit), fetch_all=True) or []
         elif user_id:
             return execute_query('''
                 SELECT * FROM feedback 
                 WHERE user_id = ? 
                 ORDER BY created_at DESC
-            ''', (user_id,), fetch_all=True) or []
+                LIMIT ?
+            ''', (user_id, limit), fetch_all=True) or []
         else:
             return execute_query('''
                 SELECT * FROM feedback 
                 ORDER BY created_at DESC
-            ''', fetch_all=True) or []
+                LIMIT ?
+            ''', (limit,), fetch_all=True) or []
     except Exception as e:
         print(f"Error getting feedback: {e}")
         return []
@@ -280,10 +355,31 @@ def get_user_statistics(user_id: int) -> Dict[str, Any]:
 def get_message_details(message_id: int, user_id: int) -> Optional[Dict]:
     """Get specific message details"""
     try:
-        return execute_query('''
+        message = execute_query('''
             SELECT * FROM chat_messages 
             WHERE id = ? AND user_id = ?
         ''', (message_id, user_id), fetch_one=True)
+        
+        if message:
+            message = dict(message)
+            # Parse sources JSON - ensure it's always a list
+            if message.get('sources'):
+                try:
+                    message['sources'] = json.loads(message['sources'])
+                except:
+                    message['sources'] = []
+            else:
+                message['sources'] = []
+            
+            # Ensure feedback_comment is a string
+            if message.get('feedback_comment') is None:
+                message['feedback_comment'] = ""
+            
+            # Add timestamp field (using created_at)
+            if 'created_at' in message:
+                message['timestamp'] = message['created_at']
+        
+        return message
     except Exception as e:
         print(f"Error getting message details: {e}")
         return None
