@@ -21,7 +21,7 @@ def get_connection():
         except ImportError:
             print("⚠️ psycopg2 not installed, falling back to SQLite")
         except Exception as e:
-            print(f"⚠️ PostgreSQL connection failed: {e}, falling back to SQLite")
+            print(f"⚠️ PostgreSQL connection big failure: {e}, falling back to SQLite")
     
     # Development: Use SQLite (default)
     db_path = Path(BASE_DIR) / "users.db"
