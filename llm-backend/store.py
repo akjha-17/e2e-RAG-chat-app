@@ -1,11 +1,10 @@
 # store.py (replace your existing file with this revised version)
 import os
 import json
-import faiss
 import numpy as np
 from pathlib import Path
 from typing import List, Dict, Optional
-from embeddings import load_embeddings,get_EmbeddingModelDimention
+from embeddings import load_embeddings, get_EmbeddingModelDimention
 from loaders import load_text_from_file
 from utils import chunk_texts
 from FlagEmbedding import FlagReranker
