@@ -8,7 +8,8 @@ from typing import List, Dict, Optional
 from embeddings import load_embeddings,get_EmbeddingModelDimention
 from loaders import load_text_from_file
 from utils import chunk_texts
-from config import INDEX_DIR, CHUNK_WORDS, CHUNK_OVERLAP, EMBED_MODEL, EMBED_BACKEND, OPENAI_EMBED_MODEL, PINECONE_CLOUD, TOP_K_DEFAULT, PINECONE_API_KEY, PINECONE_ENV, PINECONE_INDEX, VECTOR_STORE
+from FlagEmbedding import FlagReranker
+from config import INDEX_DIR, CHUNK_WORDS, CHUNK_OVERLAP, EMBED_MODEL, EMBED_BACKEND, OPENAI_EMBED_MODEL, PINECONE_CLOUD, TOP_K_DEFAULT, PINECONE_API_KEY, PINECONE_ENV, PINECONE_INDEX, VECTOR_STORE, RERANKER_MODEL
 
 # Import pinecone only if needed to avoid errors when not configured
 if VECTOR_STORE == "pinecone":
@@ -43,6 +44,7 @@ class VectorStore:
         self._embed_fn = None
         self.index: Optional[faiss.Index] = None
         self.meta: List[Dict] = []
+        self.reranker = FlagReranker(RERANKER_MODEL, use_fp16=True, query_lang_detect=True)
         
         # Initialize lock for FAISS operations
         self._lock = FileLock(str(LOCK_PATH) + ".lock")
@@ -148,9 +150,9 @@ class VectorStore:
 
 
 
-    def _embed(self, texts: List[str]) -> np.ndarray:
+    def _embed(self, texts: List[str], is_query: bool=False) -> np.ndarray:
         self._load_embedder()
-        return self._embed_fn(texts)
+        return self._embed_fn(texts, is_query=is_query)
 
     def _add_vectors(self, vectors: np.ndarray, documents: List[any]=None):
         if VECTOR_STORE == "faiss":
@@ -204,6 +206,7 @@ class VectorStore:
             metadata['source_file'] = metadata.get('source_file', 'unknown')
             vector = (doc_id, emb, metadata)
             vectors.append(vector)
+            print(f"[ADD_VECTORS] Upserting vector number {i} vectors to Pinecone index")
         # Store
         self.index.upsert(vectors)
 
@@ -351,8 +354,7 @@ class VectorStore:
         if VECTOR_STORE == "faiss":
             results, timings = self.search_faiss(query, k)
         elif VECTOR_STORE == "pinecone":
-            q_vec = self._embed([query])[0]
-            results, timings = self.search_pinecone(q_vec, top_k=k)
+            results, timings = self.search_pinecone(query, top_k=k)
         else:
             results = []
             timings = {}
@@ -444,50 +446,42 @@ class VectorStore:
             })
         return out, timings
 
-    def search_pinecone(self, query_embedding: np.ndarray, top_k: int = 5, score_threshold: float = 0.0) -> tuple[List[dict], dict]:
+    def summarize_kb(self):
+        stats = self.index.describe_index_stats()
+        # Example pseudo-code
+        return f"""
+        Knowledge base contains documents,
+        primarily from domains: {', '.join(stats['namespaces'].keys())}.
+        Each document is chunked and indexed for multilingual retrieval.
+        """
+
+    def search_pinecone(self, query: str, top_k: int = 5, score_threshold: float = 0.0) -> tuple[List[dict], dict]:
         # Returns top_k documents and their similarity scores
         timings = {}
         start_time = time.perf_counter()
+        query_embedding = self._embed(query, is_query=True)
+        timings["embedding_ms"] = round((time.perf_counter() - start_time) * 1000, 4)
+        vector_search_start = time.perf_counter()
         query_response = self.index.query(
             vector=query_embedding.tolist(),
             top_k=top_k,
             include_metadata=True,
             include_values=False
         )
+        timings["vector_search_ms"] = round((time.perf_counter() - vector_search_start) * 1000, 4)
         
-        # Extract cosine similarities for normalization
-        similarities = [match['score'] for match in query_response['matches']]
-        
-        # Normalize Pinecone cosine similarity scores to match FAISS scoring range
-        def normalize_cosine_similarity(similarity):
-            # Pinecone cosine similarity ranges from -1 to 1, with good matches typically 0.4 to 0.99+
-            # Map this to match FAISS-like scoring (0% to 99%+)
-            
-            # For very high similarities (0.95+), allow scores up to 99%
-            if similarity >= 0.95:
-                return min(0.99, 0.90 + (similarity - 0.95) * 1.8)  # 95% sim -> 90%, 99% sim -> 99%
-            
-            # For good similarities (0.8-0.95), map to 75-90%
-            elif similarity >= 0.8:
-                return 0.75 + (similarity - 0.8) * (0.15 / 0.15)  # 80% sim -> 75%, 95% sim -> 90%
-            
-            # For moderate similarities (0.6-0.8), map to 50-75%
-            elif similarity >= 0.6:
-                return 0.50 + (similarity - 0.6) * (0.25 / 0.2)  # 60% sim -> 50%, 80% sim -> 75%
-            
-            # For lower similarities (0.3-0.6), map to 20-50%
-            elif similarity >= 0.3:
-                return 0.20 + (similarity - 0.3) * (0.30 / 0.3)  # 30% sim -> 20%, 60% sim -> 50%
-            
-            # For very low similarities, give proportional low scores
-            else:
-                return max(0.01, similarity * 0.67)  # Minimum 1%, but proportional to actual similarity
+        matches = query_response.get("matches", [])
+
+        if not matches:
+            timings["rerank_ms"] = 0.0
+            timings["total_ms"] = timings["embedding_ms"] + timings["vector_search_ms"]
+            return [], timings
         
         retrieved_docs = []
-        for match in query_response['matches']:
-            similarity = match['score']  # Pinecone returns cosine similarity by default
+        for match in matches:
             metadata = match.get('metadata', {})
-            normalized_score = normalize_cosine_similarity(similarity)
+            similarity = match['score']  # Pinecone returns cosine similarity by default
+            #normalized_score = match['score']
             
             retrieved_docs.append({
                 'chunk_id': match['id'],
@@ -495,10 +489,31 @@ class VectorStore:
                 'file': metadata.get('source_file', ''),
                 'page_number': metadata.get('page_number', -1),
                 'score': similarity,  # Keep original cosine similarity
-                "score_normalized": normalized_score  # Normalized for display
+                "score_normalized": similarity  # Normalized for display
             })
-        timings["vector_search_ms"] = round((time.perf_counter() - start_time) * 1000, 4)  # 4 decimal precision
-        timings["embedding_ms"] = 0.0  # Embedding time is measured outside this function
-        return retrieved_docs,timings
+
+        # 🔹 Step 3: Apply reranking
+        rerank_start = time.perf_counter()
+        # Prepare (query, doc) pairs
+        pairs = [(query, doc["text"]) for doc in retrieved_docs]
+
+        # Predict rerank scores
+        rerank_scores = np.array(self.reranker.compute_score(pairs))
+        #normalized=(x−min(x)​)/(max(x)−min(x))
+        normalized_scores = (rerank_scores - rerank_scores.min()) / (rerank_scores.max() - rerank_scores.min() + 1e-9)
+        combined_scores = 0.5*normalized_scores + 0.5*np.array([doc['score'] for doc in retrieved_docs])
+
+        # Attach reranker scores
+        for doc, rscore in zip(retrieved_docs, combined_scores):
+            doc["score_normalized"] = float(rscore)
+        
+        timings["rerank_ms"] = round((time.perf_counter() - rerank_start) * 1000, 4)
+
+        # Sort by score_normalized (descending)
+        retrieved_docs = sorted(retrieved_docs, key=lambda x: x["score_normalized"], reverse=True)
+        print(f"[SEARCH] Reranked top {len(retrieved_docs)} documents")
+
+        timings["total_ms"] = round((time.perf_counter() - start_time) * 1000, 4)
+        return retrieved_docs, timings
 
 store = VectorStore()

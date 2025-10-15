@@ -12,14 +12,12 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from auth import (verify_token, verify_user, verify_admin, create_access_token, 
                  get_user_from_token)
 from tasks import run_reindex_background
-# Unified database functions (replaces user_db and feedback_db)
-from db_functions import (
-    create_user, authenticate_user, get_user_by_username, 
+from database import (
+    init_database, create_user, authenticate_user, get_user_by_username, 
     update_user_profile, create_chat_session, get_user_chat_sessions,
     save_chat_message, get_chat_messages, update_message_feedback,
-    delete_chat_session, update_session_title,
-    save_feedback, get_feedbacks, get_user_statistics, get_database_status,
-    get_message_details
+    delete_chat_session, update_session_title, save_general_feedback, 
+    get_general_feedbacks, get_message_details, get_user_statistics
 )
 from typing import List
 from models import (AskRequest, AskResponse, UploadResponse, ReindexResponse, 
@@ -38,6 +36,13 @@ from datetime import datetime
 
 logger = logging.getLogger("uvicorn")
 app = FastAPI(title="RAG Backend - secure")
+
+# Initialize database on startup
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Initializing database...")
+    init_database()
+    logger.info("Database initialization completed")
 
 # Add HTTPBearer security scheme for Swagger UI (OpenAPI)
 bearer_scheme = HTTPBearer()
@@ -76,11 +81,6 @@ def get_is_admin(claims: dict = Depends(get_current_user)) -> bool:
 @app.get("/health")
 def health():
     return {"status": "ok", "llm_backend": LLM_BACKEND, "embedding" : EMBED_BACKEND }
-
-@app.get("/database-status")
-def database_status():
-    """Get database connection status and info"""
-    return get_database_status()
 
 # User Authentication Endpoints
 @app.post("/auth/register", response_model=UserLoginResponse)
@@ -349,10 +349,19 @@ def ask(req: AskRequest, current_user: dict = Depends(get_current_user_data), is
     return AskResponse(query=req.query, language=q_lang, answer=answer or "", sources=sources, session_id=req.session_id)
 
 @app.post("/feedback")
-def feedback(req: FeedbackRequest, current_user=Depends(get_current_user), is_user: bool = Depends(get_is_user)):
+def feedback(req: FeedbackRequest, user=Depends(get_current_user), is_user: bool = Depends(get_is_user)):
     if is_user:
-        # persist feedback to database via save_feedback
-        save_feedback(current_user["id"], req.session_id, req.query, None, req.rating, req.comment)
+        # persist feedback to database via save_general_feedback
+        uname = user.get("preferred_username", user.get("username", "anonymous"))
+        save_general_feedback(
+            username=uname, 
+            session_id=req.session_id, 
+            query=req.query, 
+            source_chunk=None, 
+            rating=req.rating, 
+            comment=req.comment,
+            feedback_type="general"
+        )
         return JSONResponse({"status":"ok"})
     else:
         raise HTTPException(status_code=403, detail="User privileges required")
@@ -363,7 +372,7 @@ def list_feedbacks(limit: int = Query(1000, ge=1, le=10000), user=Depends(get_cu
     Retrieve recent feedback records for analysis.
     """
     if is_admin:
-        return get_feedbacks(limit=limit)
+        return get_general_feedbacks(limit=limit)
     else:
         raise HTTPException(status_code=403, detail="Admin privileges required")
 
@@ -481,18 +490,19 @@ def submit_message_feedback(
     
     # Also save to feedback table for analytics (get message details first)
     try:
-        # get_message_details now imported from db_functions
         message_details = get_message_details(feedback_data.message_id, current_user["id"])
         if message_details:
             # Create a session ID that indicates this is chat feedback
             chat_session_id = f"chat_message_{feedback_data.message_id}"
-            save_feedback(
-                user=current_user.get("preferred_username", current_user.get("username", "anonymous")),
+            save_general_feedback(
+                user_id=current_user["id"],
+                username=current_user.get("preferred_username", current_user.get("username", "anonymous")),
                 session_id=chat_session_id,
                 query=message_details.get("content", "Chat feedback"),
                 source_chunk=None,
                 rating=feedback_data.rating,
-                comment=feedback_data.comment or ""
+                comment=feedback_data.comment or "",
+                feedback_type="chat_message"
             )
     except Exception as e:
         print(f"[WARNING] Failed to save chat feedback to feedback table: {e}")
@@ -501,7 +511,7 @@ def submit_message_feedback(
     return {"status": "ok"}
 
 @app.get("/user/stats")
-def get_user_statistics(
+def get_user_stats(
     current_user: dict = Depends(get_current_user_data),
     is_user: bool = Depends(get_is_user)
 ):
@@ -510,7 +520,6 @@ def get_user_statistics(
         raise HTTPException(status_code=403, detail="User privileges required")
     
     try:
-        # get_user_statistics now imported from db_functions
         stats = get_user_statistics(current_user["id"])
         return stats
     except Exception as e:

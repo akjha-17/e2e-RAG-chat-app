@@ -1,8 +1,21 @@
 import axios from 'axios';
-const API_BASE = 'http://localhost:8000';
+
+// API Base URL - automatically detect environment
+const getApiBaseUrl = () => {
+  // Check if we're in production
+  if (import.meta.env.PROD) {
+    // In production, try to get the API URL from environment variable first
+    return import.meta.env.VITE_API_BASE_URL || 'https://your-railway-app.railway.app';
+  }
+  // In development
+  return import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+};
+
+const API_BASE = getApiBaseUrl();
 
 export const api = axios.create({
   baseURL: API_BASE,
+  timeout: 30000, // 30 seconds timeout for production
 });
 
 function getToken() {

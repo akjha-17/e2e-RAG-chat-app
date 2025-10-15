@@ -12,8 +12,9 @@ INDEX_DIR = Path(os.getenv("FAISS_PERSIST_DIR", str(BASE_DIR / "db/faiss"))).res
 
 # Embeddings
 EMBED_BACKEND = os.getenv("EMBED_BACKEND", "hf")  # "hf" | "openai"
-EMBED_MODEL = os.getenv("EMBED_MODEL", "sentence-transformers/distiluse-base-multilingual-cased-v1")
-OPENAI_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-m3")  # Changed to BGE-M3 for better multilingual support
+OPENAI_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-large")  # Upgraded for better multilingual
+RERANKER_MODEL = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-large")
 
 # Chunking
 CHUNK_WORDS = int(os.getenv("CHUNK_WORDS", "450"))
@@ -62,4 +63,12 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY", "")
 PINECONE_ENV = os.getenv("PINECONE_ENV", "us-east-1")
 PINECONE_INDEX = os.getenv("PINECONE_INDEX", "documents-index")
 PINECONE_CLOUD = os.getenv("PINECONE_CLOUD", "aws")
+
+# Database settings
+DATABASE_URL = os.getenv("DATABASE_URL", "")  # For Railway/Production
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", "5432")
+DB_NAME = os.getenv("DB_NAME", "elimschat_ai")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "password")
 

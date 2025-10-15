@@ -5,6 +5,7 @@ from config import (
     OLLAMA_HOST, OLLAMA_MODEL,
     HF_MODEL, HF_MAX_NEW_TOKENS, HF_TEMPERATURE
 )
+from store import store
 import logging
 logger = logging.getLogger(__name__)
 
@@ -22,39 +23,77 @@ def _wrap_prompt(query: str, snippets: List[str], lang_code: str, is_encoder_dec
     else:
         length_instruction = "Provide a thorough and comprehensive answer with extensive details."
 
+    metaquestion = _is_meta_question(query)
+
+    if metaquestion:
+        kb_summary = store.summarize_kb()
+        # 🟢 General knowledge mode
+        sys = (
+            f"You are a document assistant that describes the application's knowledge base and general functions.\n"
+            f"Respond in the same language as the user's question ('{lang_code}')."
+        )
+        user = (
+            f"Question: {query}\n\n"
+            f"Information about this application's knowledge base:\n{kb_summary}\n\n"
+            f"Answer:"
+        )
+        return [{"role": "system", "content": sys + "\n" + user}]
+    
     if is_encoder_decoder:
         # Instruction style (T5/mT5/Marian/mBART)
         sys = (
-            f"You are a document assistant that answers questions using the provided context. "
+            f"You are a document assistant that answers questions using the provided context.\n"
             f"RULES:\n"
-            f"1. Primarily use information from the provided context below\n"
-            f"2. For questions about the documents themselves (like 'what documents do you have' or 'tell me about your knowledge base'), you can describe and summarize the content you see\n"
-            f"3. For specific factual questions, stick strictly to the context. If the context doesn't contain enough information, respond with: 'I don't have enough information in the provided documents to answer this question.'\n"
-            f"4. Do NOT use general knowledge for specific facts not in the context\n"
-            f"5. You may make reasonable inferences from the context when describing or summarizing document contents\n"
-            f"6. Respond in the same language as the question, which is '{lang_code}'\n"
-            f"7. {length_instruction}\n"
-            f"8. Do NOT include citation markers like [1], [2] in your answer\n"
-            f"9. If the context includes procedures or instructions, provide the complete steps\n"
+            f"1. Use ONLY the information from the provided context below to answer the question.\n"
+            f"2. If the context does not contain enough information, respond exactly with: "
+            f"'I don't have enough information in the provided documents to answer this question.'\n"
+            f"3. You may internally translate both the question and the context into any language "
+            f"to reason about meaning and semantic equivalence.\n"
+            f"4. **All parts of the final answer must be in the same language as the user's question.** This includes translating any text in the context that is not in {lang_code} to {lang_code}.**\n"
+            f"4. Treat translated or semantically equivalent terms across languages as identical "
+            f"(e.g., 索引 = index, 样本 = sample). This counts as using the context, not inventing facts.\n"
+            f"5. If partial but related information exists in the context, summarize it; do not default to 'no information.'\n"
+            f"6. If the context contains procedures or step-by-step instructions, list all steps clearly in order.\n"
+            f"7. Respond in the same language as the user's question, which is '{lang_code}'.\n"
+            f"8. Provide a moderate-length answer with key details.\n"
+            f"9. Do NOT include citation markers like [1], [2].\n"
         )
-        user = f"Question: {query}\n\nContext from documents:\n{context}\n\nAnswer (using ONLY the context above):"
+
+        user = (
+            f"The question may be in a different language than the context. "
+            f"Please reason about translated equivalents internally before answering.\n\n"
+            f"Question: {query}\n\n"
+            f"Context from documents:\n{context}\n\n"
+            f"Answer (using ONLY the context above, in the same language as the question):"
+        )
         return [{"role": "user", "content": sys + "\n" + user}]
     else:
         # Chat style (GPT, LLaMA, etc.)
         sys = (
-            f"You are a document assistant that answers questions using the provided context. "
+            f"You are a document assistant that answers questions using the provided context.\n"
             f"RULES:\n"
-            f"1. Primarily use information from the provided context below\n"
-            f"2. For questions about the documents themselves (like 'what documents do you have' or 'tell me about your knowledge base'), you can describe and summarize the content you see\n"
-            f"3. For specific factual questions, stick strictly to the context. If the context doesn't contain enough information, respond with: 'I don't have enough information in the provided documents to answer this question.'\n"
-            f"4. Do NOT use general knowledge for specific facts not in the context\n"
-            f"5. You may make reasonable inferences from the context when describing or summarizing document contents\n"
-            f"6. Respond in the same language as the question, which is '{lang_code}'\n"
-            f"7. {length_instruction}\n"
-            f"8. Do NOT include citation markers like [1], [2] in your answer\n"
-            f"9. If the context includes procedures or instructions, provide the complete steps\n"
+            f"1. Use ONLY the information from the provided context below to answer the question.\n"
+            f"2. If the context does not contain enough information, respond exactly with: "
+            f"'I don't have enough information in the provided documents to answer this question.'\n"
+            f"3. You may internally translate both the question and the context into any language "
+            f"to reason about meaning and semantic equivalence.\n"
+            f"4. **All parts of the final answer must be in the same language as the user's question.** This includes translating any text in the context that is not in {lang_code} to {lang_code}.**\n"
+            f"4. Treat translated or semantically equivalent terms across languages as identical "
+            f"(e.g., 索引 = index, 样本 = sample). This counts as using the context, not inventing facts.\n"
+            f"5. If partial but related information exists in the context, summarize it; do not default to 'no information.'\n"
+            f"6. If the context contains procedures or step-by-step instructions, list all steps clearly in order.\n"
+            f"7. Respond in the same language as the user's question, which is '{lang_code}'.\n"
+            f"8. Provide a moderate-length answer with key details.\n"
+            f"9. Do NOT include citation markers like [1], [2].\n"
         )
-        user = f"Question: {query}\n\nContext from documents:\n{context}\n\nAnswer (using ONLY the context above):"
+
+        user = (
+            f"The question may be in a different language than the context. "
+            f"Please reason about translated equivalents internally before answering.\n\n"
+            f"Question: {query}\n\n"
+            f"Context from documents:\n{context}\n\n"
+            f"Answer (using ONLY the context above, in the same language as the question):"
+        )
         return [{"role": "system", "content": sys}, {"role": "user", "content": user}]
 
 def _is_meta_question(query: str) -> bool:
@@ -67,7 +106,7 @@ def _is_meta_question(query: str) -> bool:
         "tell me about the documents", "what documents", "knowledge base", "what's in",
         "summarize the documents", "overview of documents", "what information",
         "contents of", "available documents", "document summary", "what do you know",
-        "what can you help", "what topics", "document topics", "files available"
+        "what can you help me with", "what topics", "document topics", "files available", "Tell me about the documents in your knowledge base"
     ]
     return any(keyword in query_lower for keyword in meta_keywords)
 
@@ -76,7 +115,9 @@ def _validate_context_usage(answer: str, snippets: List[str], query: str = "") -
     Validate if the answer appears to use the provided context.
     Returns True if the answer seems to use context, False if it seems like general knowledge.
     """
+    print(f"[VALIDATION] Validating answer context usage. Answer length: {len(answer)}, Snippets count: {len(snippets)}")
     if not answer or not snippets:
+        print(f"[VALIDATION] No answer or snippets provided, answer : {answer}, snippets: {len(snippets)}")
         return False
     
     # Allow more flexibility for meta-questions about the knowledge base
@@ -97,26 +138,10 @@ def _validate_context_usage(answer: str, snippets: List[str], query: str = "") -
     
     answer_lower = answer.lower()
     if any(phrase in answer_lower for phrase in insufficient_phrases):
-        return True  # This is a valid "insufficient context" response
+        print(f"[VALIDATION] Answer indicates insufficient context: {answer}")
+        return False  # This is a valid "insufficient context" response
     
-    # Check if answer contains keywords from the context
-    context_text = " ".join(snippets).lower()
-    answer_words = set(answer_lower.split())
-    context_words = set(context_text.split())
-    
-    # Remove common words for better matching
-    common_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they'}
-    
-    meaningful_answer_words = answer_words - common_words
-    meaningful_context_words = context_words - common_words
-    
-    # Check overlap between answer and context (reduced threshold for more flexibility)
-    if meaningful_answer_words:
-        overlap = meaningful_answer_words & meaningful_context_words
-        overlap_ratio = len(overlap) / len(meaningful_answer_words)
-        return overlap_ratio >= 0.2  # Reduced from 0.3 to 0.2 for more flexibility
-    
-    return False
+    return True  # Assume context was used if none of the above conditions matched
 
 def generate_answer(query: str, snippets: List[str], lang_code: str, response_length: int = 50) -> tuple[Optional[str], dict]:
     """

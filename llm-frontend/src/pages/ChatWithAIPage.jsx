@@ -411,7 +411,7 @@ export default function ChatWithAIPage() {
                         >
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, flex: 1 }}>
                             <Chip 
-                              label={`${(src.file.split('/').pop() || src.file.split('\\').pop() || src.file)}${src.page_number !== -1 ? ` - Page ${src.page_number}` : ''}`}
+                              label={`${(src.file && (src.file.split('/').pop() || src.file.split('\\').pop() || src.file)) || 'unknown'}${(src.page_number ?? -1) !== -1 ? ` - Page ${src.page_number}` : ''}`}
                               variant="outlined"
                               size="small"
                               sx={{ 
@@ -425,7 +425,7 @@ export default function ChatWithAIPage() {
                               }}
                             />
                             <Typography variant="caption" color="text.secondary">
-                              {(src.score_normalized * 100).toFixed(0)}%
+                              {Math.round(((src.score_normalized ?? src.score ?? 0) * 100))}%
                             </Typography>
                           </Box>
                           <IconButton size="small" sx={{ flexShrink: 0 }}>
@@ -436,7 +436,7 @@ export default function ChatWithAIPage() {
                           <Box sx={{ p: 1.5, backgroundColor: '#fafafa', borderTop: '1px solid #e0e0e0' }}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                               <Typography variant="caption" color="text.secondary">
-                                Chunk {src.chunk_id}
+                                Chunk {src.chunk_id ?? src.chunkId ?? 'n/a'}
                               </Typography>
                               <Typography 
                                 variant="caption" 
@@ -464,7 +464,7 @@ export default function ChatWithAIPage() {
                                 wordBreak: 'break-word'
                               }}
                             >
-                              {src.preview}
+                              {src.preview || src.text || src.snippet || ''}
                             </Typography>
                           </Box>
                         </Collapse>
