@@ -2,12 +2,11 @@ from typing import Dict, Generator
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from typing import List
-import langid
+from langdetect import detect
 
 def detect_language(text: str) -> str:
     try:
-        lang, _ = langid.classify(text)
-        return lang
+        return detect(text)
     except Exception:
         return "en"
 

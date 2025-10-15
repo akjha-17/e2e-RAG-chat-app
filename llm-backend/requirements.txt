@@ -12,7 +12,6 @@ httpx
 openai
 python-jose[cryptography]
 cachetools
-langid
 pip_system_certs
 numpy
 pinecone
@@ -22,3 +21,4 @@ FlagEmbedding
 psycopg2-binary
 python-dotenv
 requests
+langdetect
