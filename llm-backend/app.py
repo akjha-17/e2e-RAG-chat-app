@@ -1,4 +1,3 @@
-
 import os
 import uuid
 import time
@@ -9,10 +8,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from auth import (verify_token, verify_user, verify_admin, create_access_token, 
+from .auth import (verify_token, verify_user, verify_admin, create_access_token, 
                  get_user_from_token)
-from tasks import run_reindex_background
-from database import (
+from .tasks import run_reindex_background
+from .database import (
     init_database, create_user, authenticate_user, get_user_by_username, 
     update_user_profile, create_chat_session, get_user_chat_sessions,
     save_chat_message, get_chat_messages, update_message_feedback,
@@ -20,16 +19,16 @@ from database import (
     get_general_feedbacks, get_message_details, get_user_statistics
 )
 from typing import List
-from models import (AskRequest, AskResponse, UploadResponse, ReindexResponse, 
+from .models import (AskRequest, AskResponse, UploadResponse, ReindexResponse, 
                    FeedbackRequest, SourceItem, DevTokenRequest, UserRegistrationRequest,
                    UserLoginRequest, UserLoginResponse, UserProfileUpdateRequest,
                    UserProfileResponse, ChatSessionCreateRequest, ChatSessionResponse,
                    ChatMessageResponse, ChatSessionDetailResponse, ChatSessionUpdateRequest,
                    MessageFeedbackRequest)
-from utils import detect_language
-from store import store
-from llm import generate_answer
-from config import DATA_DIR, MAX_UPLOAD_SIZE, ALLOWED_EXTENSIONS, TOP_K_DEFAULT, AZURE_OPENID_CONFIG, JWT_SECRET,LLM_BACKEND, EMBED_BACKEND, VECTOR_STORE
+from .utils import detect_language
+from .store import store
+from .llm import generate_answer
+from .config import DATA_DIR, MAX_UPLOAD_SIZE, ALLOWED_EXTENSIONS, TOP_K_DEFAULT, AZURE_OPENID_CONFIG, JWT_SECRET,LLM_BACKEND, EMBED_BACKEND, VECTOR_STORE
 from fastapi import Query
 from datetime import datetime
 

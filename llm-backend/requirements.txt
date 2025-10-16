@@ -21,4 +21,4 @@ FlagEmbedding
 psycopg2-binary
 python-dotenv
 requests
-langdetect
+langid

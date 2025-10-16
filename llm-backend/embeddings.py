@@ -1,8 +1,7 @@
 # embeddings.py (small changes)
-#import pip_system_certs.wrapt_requests
 from typing import Callable, List
 import numpy as np
-from config import EMBED_BACKEND, EMBED_MODEL, OPENAI_EMBED_MODEL, OPENAI_API_KEY
+from .config import EMBED_BACKEND, EMBED_MODEL, OPENAI_EMBED_MODEL, OPENAI_API_KEY
 from sentence_transformers import SentenceTransformer
 from openai import OpenAI
 

@@ -1,6 +1,6 @@
 # llm.py (improved with bugfixes + logging)
 from typing import List, Optional
-from config import (
+from .config import (
     LLM_BACKEND, OPENAI_API_KEY, OPENAI_MODEL,
     OLLAMA_HOST, OLLAMA_MODEL,
     HF_MODEL, HF_MAX_NEW_TOKENS, HF_TEMPERATURE

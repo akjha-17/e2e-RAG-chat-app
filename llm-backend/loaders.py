@@ -8,6 +8,7 @@ from openpyxl import load_workbook
 import fitz
 from langchain_core.documents import Document
 import os
+from .config import DATA_DIR
 
 def _md_to_text_and_images(md: str, base_path: Path) -> List[Document]:
     html = markdown(md, extensions=['extra', 'tables'])
