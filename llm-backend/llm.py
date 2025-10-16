@@ -5,7 +5,7 @@ from .config import (
     OLLAMA_HOST, OLLAMA_MODEL,
     HF_MODEL, HF_MAX_NEW_TOKENS, HF_TEMPERATURE
 )
-from store import store
+from .store import store
 import logging
 logger = logging.getLogger(__name__)
 
