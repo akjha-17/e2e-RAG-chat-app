@@ -5,7 +5,7 @@ from jose import jwt, JWTError
 import httpx
 from cachetools import TTLCache, cached
 from typing import Dict, Any, Optional
-from .config import AZURE_OPENID_CONFIG, JWKS_CACHE_TTL, AZURE_CLIENT_ID, JWT_SECRET
+from config import AZURE_OPENID_CONFIG, JWKS_CACHE_TTL, AZURE_CLIENT_ID, JWT_SECRET
 
 logger = logging.getLogger(__name__)
 

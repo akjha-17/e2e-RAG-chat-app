@@ -1,7 +1,7 @@
 # app/tasks.py
 import logging
 from pathlib import Path
-from .store import store  # Explicit relative import
+from store import store  # Explicit relative import
 
 logger = logging.getLogger(__name__)
 

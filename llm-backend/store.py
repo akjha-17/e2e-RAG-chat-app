@@ -4,11 +4,11 @@ import json
 import numpy as np
 from pathlib import Path
 from typing import List, Dict, Optional
-from .embeddings import load_embeddings, get_EmbeddingModelDimention
-from .loaders import load_text_from_file
-from .utils import chunk_texts
+from embeddings import load_embeddings, get_EmbeddingModelDimention
+from loaders import load_text_from_file
+from utils import chunk_texts
 from FlagEmbedding import FlagReranker
-from .config import INDEX_DIR, CHUNK_WORDS, CHUNK_OVERLAP, EMBED_MODEL, EMBED_BACKEND, OPENAI_EMBED_MODEL, PINECONE_CLOUD, TOP_K_DEFAULT, PINECONE_API_KEY, PINECONE_ENV, PINECONE_INDEX, VECTOR_STORE, RERANKER_MODEL
+from config import INDEX_DIR, CHUNK_WORDS, CHUNK_OVERLAP, EMBED_MODEL, EMBED_BACKEND, OPENAI_EMBED_MODEL, PINECONE_CLOUD, TOP_K_DEFAULT, PINECONE_API_KEY, PINECONE_ENV, PINECONE_INDEX, VECTOR_STORE, RERANKER_MODEL
 
 # Import pinecone only if needed to avoid errors when not configured
 if VECTOR_STORE == "pinecone":
