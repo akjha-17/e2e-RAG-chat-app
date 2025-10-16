@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
 pydantic
+faiss-cpu
 sentence-transformers
 markdown
 beautifulsoup4
@@ -10,15 +11,23 @@ python-pptx
 openpyxl
 httpx
 openai
+# Optional (only if you set LLM_BACKEND=hf):
+# transformers
+# accelerate
 python-jose[cryptography]
 cachetools
+langid
 pip_system_certs
 numpy
+pandas
+matplotlib
 pinecone
 PyMuPDF
+langchain-core
+langchain
 filelock
 FlagEmbedding
+
 psycopg2-binary
 python-dotenv
 requests
-langid
